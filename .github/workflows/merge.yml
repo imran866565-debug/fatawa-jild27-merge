@@ -1,0 +1,128 @@
+name: Merge Jild 27 tashreeh
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  merge:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Merge chunks
+        run: python3 merge_jild27.py
+      - name: Verify merged file
+        run: |
+          python3 - <<'EOF'
+          import json
+          d = json.load(open('jild-27.json', encoding='utf-8'))
+          items = d['masail']
+          pages = set()
+          for it in items:
+              pages.update(it['pages'])
+          print('items:', len(items))
+          print('unique pages:', len(pages), 'min:', min(pages), 'max:', max(pages))
+          print('ids unique:', len(set(it['id'] for it in items)) == len(items))
+          print('empty jawab:', [it['id'] for it in items if not it.get('tashreeh_jawab')])
+          print('empty sawal:', [it['id'] for it in items if not it.get('tashreeh_sawal')])
+          print('volume_ids:', sorted(set(it.get('volume_id') for it in items)))
+          print('start_page==min(pages) all:', all(it.get('start_page') == min(it['pages']) for it in items))
+          print('sorted by start_page:', [it['start_page'] for it in items] == sorted(it['start_page'] for it in items))
+          combined = {
+              'jild27-masala-30': (list(range(74, 164)), 7300, 38907),
+              'jild27-risala-86': ([p for p in range(213, 354) if p != 351], 0, 164972),
+              'jild27-risala-87-maqam-12-31': (list(range(399, 545)), 0, 160112),
+          }
+          for cid, (expected_pages, exp_sawal, exp_jawab) in combined.items():
+              hits = [it for it in items if it['id'] == cid]
+              print(cid, 'items:', len(hits), 'pages:', hits[0]['pages'][0], '-', hits[0]['pages'][-1], f'({len(hits[0]["pages"])} pages)' if hits else None)
+              assert len(hits) == 1
+              assert hits[0]['pages'] == expected_pages, f'{cid}: pages mismatch'
+              assert len(hits[0].get('tashreeh_sawal', '')) == exp_sawal, f'{cid}: sawal length mismatch'
+              assert len(hits[0].get('tashreeh_jawab', '')) == exp_jawab, f'{cid}: jawab length mismatch'
+              assert hits[0].get('tashreeh_jawab'), f'{cid}: jawab empty'
+              if exp_sawal:
+                  assert hits[0].get('tashreeh_sawal'), f'{cid}: sawal empty'
+          # the nine absorbed ids must be gone
+          for sid in ['jild27-masala-30-muqaddima',
+                      'jild27-masala-30-jawab-qawl-awwal',
+                      'jild27-masala-30-jawab-qawl-dom-som-chaharum',
+                      'jild27-risala-86-muqaddima',
+                      'jild27-risala-87-maqam-12',
+                      'jild27-risala-87',
+                      'jild27-risala-87-maqam-25',
+                      'jild27-risala-87-maqam-26',
+                      'jild27-risala-87-maqam-27',
+                      'jild27-risala-87-maqam-28',
+                      'jild27-risala-87-maqam-29',
+                      'jild27-risala-87-maqam-30']:
+              assert not any(it['id'] == sid for it in items), f'absorbed id {sid} must not exist'
+          print('12 absorbed ids gone')
+          # chunk 08's muqaddima + maqam-01..11 stay separate
+          for did, exp_pages in [
+                  ('jild27-risala-87-muqaddima', [353, 354, 355, 356]),
+                  ('jild27-risala-87-maqam-01', list(range(356, 374))),
+                  ('jild27-risala-87-maqam-02', list(range(373, 381))),
+                  ('jild27-risala-87-maqam-03', [380, 381, 382, 383]),
+                  ('jild27-risala-87-maqam-04', [383, 384, 385, 386, 387]),
+                  ('jild27-risala-87-maqam-05', [387, 388]),
+                  ('jild27-risala-87-maqam-06', [388, 389, 390, 391]),
+                  ('jild27-risala-87-maqam-07', [391, 392]),
+                  ('jild27-risala-87-maqam-08', [392]),
+                  ('jild27-risala-87-maqam-09', [392, 393]),
+                  ('jild27-risala-87-maqam-10', [393, 394, 395, 396, 397, 398]),
+                  ('jild27-risala-87-maqam-11', [398, 399])]:
+              hits = [it for it in items if it['id'] == did]
+              assert len(hits) == 1, f'{did}: expected exactly 1 item'
+              assert hits[0]['pages'] == exp_pages, f'{did}: pages mismatch'
+              print(did, 'present (kept separate)')
+          # NO masala-19 may exist anywhere in the volume
+          assert not any(it['id'] == 'jild27-masala-19' for it in items), 'jild27-masala-19 must NOT exist'
+          print('no jild27-masala-19 present (as expected)')
+          # masala-8-9 stays as ONE item covering printed masail 8 and 9
+          hits = [it for it in items if it['id'] == 'jild27-masala-8-9']
+          assert len(hits) == 1, 'jild27-masala-8-9: expected exactly 1 item'
+          assert hits[0]['pages'] == [18, 19, 20], 'jild27-masala-8-9: pages mismatch'
+          print('jild27-masala-8-9 present as one item [18, 19, 20]')
+          # distinct items kept separate
+          for did, exp_pages in [
+                  ('jild27-pesh-lafz', list(range(4, 11))),
+                  ('jild27-masala-1', [11]),
+                  ('jild27-masala-31', list(range(164, 198))),
+                  ('jild27-masala-32', [198, 199, 200, 201, 202, 203, 204, 205, 206, 207, 208, 209, 212]),
+                  ('jild27-masala-33', [545, 546, 547, 548]),
+                  ('jild27-masala-34', list(range(549, 565))),
+                  ('jild27-masala-35', list(range(565, 588))),
+                  ('jild27-risala-462', list(range(588, 609))),
+                  ('jild27-risala-463', list(range(609, 643))),
+                  ('jild27-khatima', list(range(643, 649)))]:
+              hits = [it for it in items if it['id'] == did]
+              assert len(hits) == 1, f'{did}: expected exactly 1 item'
+              if exp_pages is not None:
+                  assert hits[0]['pages'] == exp_pages, f'{did}: pages mismatch'
+              print(did, 'present (kept separate)')
+          assert len(items) == 51
+          assert len(pages) == 642
+          assert min(pages) == 4 and max(pages) == 648
+          assert len(set(it['id'] for it in items)) == len(items)
+          # exactly ZERO empty jawabs after the merge
+          assert {it['id'] for it in items if not it.get('tashreeh_jawab')} == set()
+          assert {it['id'] for it in items if not it.get('tashreeh_sawal')} == {
+              'jild27-pesh-lafz', 'jild27-masala-1', 'jild27-risala-86',
+              'jild27-risala-87-muqaddima',
+              'jild27-risala-87-maqam-01', 'jild27-risala-87-maqam-02',
+              'jild27-risala-87-maqam-03', 'jild27-risala-87-maqam-04',
+              'jild27-risala-87-maqam-05', 'jild27-risala-87-maqam-06',
+              'jild27-risala-87-maqam-07', 'jild27-risala-87-maqam-08',
+              'jild27-risala-87-maqam-09', 'jild27-risala-87-maqam-10',
+              'jild27-risala-87-maqam-11', 'jild27-risala-87-maqam-12-31',
+              'jild27-risala-462', 'jild27-risala-463', 'jild27-khatima'}
+          print('VERIFICATION PASSED')
+          EOF
+      - name: Create release with merged file
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          ls -la jild-27.json
+          gh release create v1.0 jild-27.json --title "Jild 27 tashreeh - merged" --notes "Merged tashreeh for Fatawa Razviya Jild 27: 51 items, 642 pages (volume_id 33, pp. 4-648, 3 source-DB gap pages 210/211/351; source export has 645 rows / 642 unique pages — pp. 212, 353, 459 have two rows each). Generated by merge_jild27.py from the 13 chunk files; 3 combine cases (masala-30 4-part; risala-86 3-part; risala-87 maqam-12-31 9-part mega-combine); no applied-in-chunk renames; no masala-19 in print (headings run 18 -> 20); masala-8-9 kept as one item; chunk 08 muqaddima + maqam-01..11 kept separate; zero empty jawab after merge." || gh release upload v1.0 jild-27.json --clobber
